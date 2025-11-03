@@ -206,4 +206,14 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Data
 data/
+
+# Model checkpoints and weights
+models/
+*.pth
+*.pt
+*.ckpt
+
+# TensorBoard logs
+runs/
