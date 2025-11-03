@@ -58,13 +58,60 @@ python scripts/download_data.py --output-dir data/raw --subset train
 - Dataset: [yhyang-myron/PartObjaverse-Tiny](https://huggingface.co/datasets/yhyang-myron/PartObjaverse-Tiny)
 - Paper: [SAMPart3D](https://yhyang-myron.github.io/SAMPart3D-website/?utm_source=chatgpt.com)
 
-## Next Steps
+## Usage
 
-1. **Data Exploration**: Explore the 3D data format, visualization, and segmentation labels
-2. **Preprocessing**: Convert meshes to point clouds, apply normalization
-3. **Model Development**: Implement 3D segmentation networks (PointNet, PointNet++, etc.)
-4. **Training**: Train and evaluate segmentation models
-5. **Analysis**: Understand trade-offs in 3D data representation and model architectures
+### 1. Preprocess Data
+
+Convert raw meshes to point clouds:
+
+```bash
+python scripts/preprocess_data.py --input-dir data/raw --output-dir data/processed
+```
+
+### 2. Train Model
+
+Train PointNet for semantic segmentation:
+
+```bash
+# Train with default settings
+python scripts/train.py
+
+# Custom training
+python scripts/train.py --batch-size 16 --num-epochs 200 --lr 0.0005
+
+# Monitor training
+tensorboard --logdir runs/
+```
+
+### 3. Evaluate Model
+
+Evaluate trained model on test set:
+
+```bash
+python scripts/evaluate.py
+
+# Metrics computed: accuracy, per-class IoU, mean IoU, confusion matrix
+```
+
+### 4. Visualize Predictions
+
+Generate interactive 3D visualizations:
+
+```bash
+# Visualize random samples
+python scripts/visualize_predictions.py --num-samples 5
+
+# Show prediction errors
+python scripts/visualize_predictions.py --show-errors
+```
+
+## Current Features
+
+- ✓ **Data Pipeline**: Download, preprocess, and augment 3D point cloud data
+- ✓ **PointNet Model**: Semantic segmentation with feature transforms
+- ✓ **Training**: TensorBoard logging, checkpointing, learning rate scheduling
+- ✓ **Evaluation**: Accuracy, IoU metrics, confusion matrix
+- ✓ **Visualization**: Interactive 3D plots of predictions vs ground truth
 
 ## Goals
 
