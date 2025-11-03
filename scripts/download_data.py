@@ -4,22 +4,21 @@ Download PartObjaverse-Tiny dataset from HuggingFace.
 
 This script downloads the PartObjaverse-Tiny dataset which contains:
 - 3D mesh data (.obj files)
-- Part segmentation labels
-- Point cloud representations
+- Part segmentation labels (semantic and instance)
 
 Usage:
-    python scripts/download_data.py --output-dir data/raw --subset train
+    python scripts/download_data.py --output-dir data/raw
 """
 
 import argparse
 import logging
 from pathlib import Path
-from typing import Optional
 import sys
+import zipfile
 
 try:
-    from datasets import load_dataset
-    from huggingface_hub import snapshot_download
+    from huggingface_hub import hf_hub_download
+    from tqdm import tqdm
 except ImportError:
     print("Error: Required packages not installed.")
     print("Please run: pip install -r requirements.txt")
@@ -33,12 +32,41 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Files to download from the dataset
+DATASET_FILES = [
+    "PartObjaverse-Tiny_mesh.zip",
+    "PartObjaverse-Tiny_semantic_gt.zip",
+    "PartObjaverse-Tiny_instance_gt.zip"
+]
+
+
+def extract_zip(zip_path: Path, extract_to: Path) -> None:
+    """
+    Extract a zip file to a specified directory.
+
+    Args:
+        zip_path: Path to the zip file
+        extract_to: Directory to extract files to
+    """
+    logger.info(f"Extracting {zip_path.name}...")
+    extract_to.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        # Get list of files in zip
+        file_list = zip_ref.namelist()
+
+        # Extract with progress bar
+        for file in tqdm(file_list, desc=f"Extracting {zip_path.name}", unit="files"):
+            zip_ref.extract(file, extract_to)
+
+    logger.info(f"Extracted to {extract_to}")
+
 
 def download_dataset(
     output_dir: Path,
     dataset_name: str = "yhyang-myron/PartObjaverse-Tiny",
-    subset: Optional[str] = None,
-    cache_dir: Optional[Path] = None
+    extract: bool = True,
+    keep_zip: bool = False
 ) -> None:
     """
     Download the PartObjaverse-Tiny dataset from HuggingFace.
@@ -46,52 +74,74 @@ def download_dataset(
     Args:
         output_dir: Directory to save the downloaded data
         dataset_name: HuggingFace dataset identifier
-        subset: Optional subset to download (train/test/validation)
-        cache_dir: Optional cache directory for HuggingFace downloads
+        extract: Whether to extract zip files after downloading
+        keep_zip: Whether to keep zip files after extraction
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    zip_dir = output_dir / "zips"
+    zip_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Downloading dataset: {dataset_name}")
     logger.info(f"Output directory: {output_dir.absolute()}")
+    logger.info(f"Files to download: {len(DATASET_FILES)}")
 
-    if cache_dir:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Cache directory: {cache_dir.absolute()}")
+    downloaded_files = []
 
     try:
-        # Download using HuggingFace datasets library
-        logger.info("Starting download...")
+        # Download each file
+        for filename in DATASET_FILES:
+            logger.info(f"\nDownloading {filename}...")
 
-        if subset:
-            logger.info(f"Downloading subset: {subset}")
-            dataset = load_dataset(
-                dataset_name,
-                split=subset,
-                cache_dir=str(cache_dir) if cache_dir else None
-            )
-        else:
-            logger.info("Downloading all splits")
-            dataset = load_dataset(
-                dataset_name,
-                cache_dir=str(cache_dir) if cache_dir else None
+            file_path = hf_hub_download(
+                repo_id=dataset_name,
+                filename=filename,
+                repo_type="dataset",
+                local_dir=str(zip_dir),
+                local_dir_use_symlinks=False
             )
 
-        # Save the dataset to disk
-        logger.info(f"Saving dataset to {output_dir}")
-        dataset.save_to_disk(str(output_dir))
+            downloaded_files.append(Path(file_path))
+            logger.info(f"Downloaded: {file_path}")
 
-        logger.info("Download completed successfully!")
-        logger.info(f"Dataset saved to: {output_dir.absolute()}")
+        logger.info("\n" + "="*60)
+        logger.info("All files downloaded successfully!")
+        logger.info("="*60)
 
-        # Print dataset info
-        if isinstance(dataset, dict):
-            for split_name, split_data in dataset.items():
-                logger.info(f"Split '{split_name}': {len(split_data)} samples")
-        else:
-            logger.info(f"Total samples: {len(dataset)}")
+        # Extract if requested
+        if extract:
+            logger.info("\nExtracting files...")
+            for zip_path in downloaded_files:
+                extract_zip(zip_path, output_dir)
+
+            # Remove zip files if not keeping them
+            if not keep_zip:
+                logger.info("\nCleaning up zip files...")
+                for zip_path in downloaded_files:
+                    zip_path.unlink()
+                    logger.info(f"Removed {zip_path.name}")
+                # Remove zip directory if empty
+                if zip_dir.exists() and not any(zip_dir.iterdir()):
+                    zip_dir.rmdir()
+                    logger.info(f"Removed empty directory {zip_dir}")
+
+        logger.info("\n" + "="*60)
+        logger.info("Dataset download complete!")
+        logger.info(f"Location: {output_dir.absolute()}")
+        logger.info("="*60)
+
+        # Print directory structure
+        logger.info("\nDataset structure:")
+        for item in sorted(output_dir.rglob("*")):
+            if item.is_dir():
+                rel_path = item.relative_to(output_dir)
+                logger.info(f"  📁 {rel_path}/")
+                # Count files in directory
+                file_count = len([f for f in item.iterdir() if f.is_file()])
+                if file_count > 0:
+                    logger.info(f"     ({file_count} files)")
 
     except Exception as e:
-        logger.error(f"Error downloading dataset: {e}")
+        logger.error(f"\nError downloading dataset: {e}")
         logger.error("Make sure you have internet connection and required packages installed")
         sys.exit(1)
 
@@ -102,14 +152,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Download entire dataset
+  # Download and extract dataset
   python scripts/download_data.py --output-dir data/raw
 
-  # Download only training set
-  python scripts/download_data.py --output-dir data/raw --subset train
+  # Download but don't extract
+  python scripts/download_data.py --output-dir data/raw --no-extract
 
-  # Specify custom cache directory
-  python scripts/download_data.py --output-dir data/raw --cache-dir .cache
+  # Keep zip files after extraction
+  python scripts/download_data.py --output-dir data/raw --keep-zip
         """
     )
 
@@ -121,24 +171,22 @@ Examples:
     )
 
     parser.add_argument(
-        "--subset",
-        type=str,
-        choices=["train", "test", "validation"],
-        help="Download specific subset only (default: download all)"
-    )
-
-    parser.add_argument(
-        "--cache-dir",
-        type=Path,
-        default=Path(".cache"),
-        help="Cache directory for HuggingFace downloads (default: .cache)"
-    )
-
-    parser.add_argument(
         "--dataset-name",
         type=str,
         default="yhyang-myron/PartObjaverse-Tiny",
         help="HuggingFace dataset name (default: yhyang-myron/PartObjaverse-Tiny)"
+    )
+
+    parser.add_argument(
+        "--no-extract",
+        action="store_true",
+        help="Don't extract zip files after downloading"
+    )
+
+    parser.add_argument(
+        "--keep-zip",
+        action="store_true",
+        help="Keep zip files after extraction (default: remove them)"
     )
 
     parser.add_argument(
@@ -155,8 +203,8 @@ Examples:
     download_dataset(
         output_dir=args.output_dir,
         dataset_name=args.dataset_name,
-        subset=args.subset,
-        cache_dir=args.cache_dir
+        extract=not args.no_extract,
+        keep_zip=args.keep_zip
     )
 
 
