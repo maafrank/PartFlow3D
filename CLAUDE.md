@@ -20,9 +20,9 @@ cp .env.example .env
 # Edit .env with custom paths/hyperparameters if needed
 ```
 
-## Data Management
+## Data Pipeline
 
-### Download Dataset
+### 1. Download Dataset
 
 The project uses PartObjaverse-Tiny, a 3D part segmentation dataset from HuggingFace containing meshes with semantic and instance part labels.
 
@@ -38,9 +38,35 @@ python scripts/download_data.py --output-dir data/raw --keep-zip
 ```
 
 The download script fetches three zip files:
-- `PartObjaverse-Tiny_mesh.zip` - 3D mesh data (.obj files)
-- `PartObjaverse-Tiny_semantic_gt.zip` - Semantic segmentation labels
-- `PartObjaverse-Tiny_instance_gt.zip` - Instance segmentation labels
+- `PartObjaverse-Tiny_mesh.zip` - 3D mesh data (.glb files)
+- `PartObjaverse-Tiny_semantic_gt.zip` - Semantic segmentation labels (per-face)
+- `PartObjaverse-Tiny_instance_gt.zip` - Instance segmentation labels (per-face)
+
+### 2. Preprocess Dataset
+
+Convert meshes to point clouds for neural network training:
+
+```bash
+# Preprocess with default settings (2048 points, normalized)
+python scripts/preprocess_data.py --input-dir data/raw --output-dir data/processed
+
+# Use more points for higher resolution
+python scripts/preprocess_data.py --input-dir data/raw --output-dir data/processed --num-points 4096
+
+# Disable normalization
+python scripts/preprocess_data.py --input-dir data/raw --output-dir data/processed --no-normalize
+```
+
+**What preprocessing does:**
+- Loads GLB meshes (handles Scene objects with multiple geometries)
+- Samples point clouds uniformly from mesh surfaces
+- Transfers per-face labels to sampled points
+- Normalizes to unit sphere (center to origin + scale)
+- Saves as compressed `.npz` files with metadata
+
+**Output:** `data/processed/` contains:
+- One `.npz` file per sample with: points, semantic_labels, instance_labels, centroid, scale
+- `preprocessing_stats.json` with dataset statistics
 
 ## Project Architecture
 
@@ -60,11 +86,19 @@ PartFlow3D/
 
 ### Development Flow
 
-1. **Data Exploration** - Use Jupyter notebooks to visualize 3D data and understand segmentation labels
-2. **Preprocessing** - Convert meshes to point clouds, apply normalization/augmentation
+1. **Data Exploration** - Use `notebooks/01_data_exploration.ipynb` to visualize 3D data, understand segmentation labels, and analyze dataset statistics
+2. **Preprocessing** - Run `scripts/preprocess_data.py` to convert meshes → point clouds with normalization
 3. **Model Development** - Implement 3D segmentation architectures (PointNet, PointNet++, etc.) in `src/`
 4. **Training** - Create training scripts with proper logging (TensorBoard), checkpointing
 5. **Evaluation** - Analyze segmentation performance and understand trade-offs
+
+### Data Exploration Notebook
+
+`notebooks/01_data_exploration.ipynb` provides:
+- Interactive 3D visualization (Plotly) of meshes and segmentations
+- Dataset statistics (vertex counts, face counts, parts per mesh)
+- Point cloud sampling demonstrations
+- Understanding of semantic vs instance segmentation
 
 ### Key Technologies
 
@@ -86,13 +120,20 @@ flake8 .
 pytest
 ```
 
-## Development Notes
+## Important Implementation Details
+
+### Dataset Label Format
+
+**Critical:** Labels in PartObjaverse-Tiny are **per-face**, not per-vertex!
+- Each label corresponds to a mesh face (triangle)
+- When sampling point clouds, labels are assigned from the face each point was sampled from
+- GLB files may contain Scene objects with multiple geometries - use `trimesh.util.concatenate()` to merge them
 
 ### 3D Data Representations
 
-The project will explore multiple 3D data representations:
-- **Meshes**: Vertices + faces (original format from dataset)
-- **Point Clouds**: Sampled points from mesh surfaces (common for neural networks)
+The project explores multiple 3D data representations:
+- **Meshes**: Vertices + faces (original format from dataset, GLB files)
+- **Point Clouds**: Sampled points from mesh surfaces (used for neural networks, default: 2048 points)
 - **Voxels**: 3D grid representation (memory-intensive but useful for certain architectures)
 
 ### Environment Variables
